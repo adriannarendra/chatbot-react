@@ -1,0 +1,409 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Snake — Single File</title>
+    <style>
+        :root {
+            --bg: #071026;
+            --panel: #0b1220;
+            --accent: #34d399;
+            --muted: #94a3b8;
+            --danger: #fb7185
+        }
+
+        html,
+        body {
+            height: 100%;
+            margin: 0;
+            font-family: Inter, system-ui, Segoe UI, Roboto, 'Helvetica Neue', Arial
+        }
+
+        body {
+            background: linear-gradient(180deg, #001122 0%, var(--bg) 100%);
+            color: #e6eef8;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px
+        }
+
+        .app {
+            width: 100%;
+            max-width: 980px
+        }
+
+        .card {
+            background: linear-gradient(180deg, rgba(255, 255, 255, 0.02), transparent);
+            border: 1px solid rgba(255, 255, 255, 0.04);
+            padding: 14px;
+            border-radius: 12px
+        }
+
+        .top {
+            display: flex;
+            gap: 12px;
+            align-items: center;
+            margin-bottom: 12px
+        }
+
+        .controls {
+            display: flex;
+            gap: 8px;
+            align-items: center
+        }
+
+        label {
+            font-size: 13px;
+            color: var(--muted);
+            display: flex;
+            flex-direction: column
+        }
+
+        input[type=number],
+        select {
+            padding: 6px 8px;
+            border-radius: 8px;
+            border: none;
+            background: rgba(255, 255, 255, 0.03);
+            color: inherit;
+            width: 90px
+        }
+
+        button {
+            background: var(--accent);
+            border: none;
+            color: #04202a;
+            padding: 8px 12px;
+            border-radius: 10px;
+            cursor: pointer;
+            font-weight: 700
+        }
+
+        button.warn {
+            background: var(--danger);
+            color: white
+        }
+
+        .game-area {
+            display: flex;
+            gap: 12px;
+            align-items: flex-start
+        }
+
+        canvas {
+            background: linear-gradient(180deg, #071027, #041422);
+            border-radius: 10px;
+            border: 1px solid rgba(255, 255, 255, 0.04);
+            touch-action: none
+        }
+
+        .side {
+            min-width: 220px
+        }
+
+        .stat {
+            font-size: 13px;
+            color: var(--muted);
+            margin-bottom: 8px
+        }
+
+        .big {
+            font-size: 20px;
+            font-weight: 800
+        }
+
+        .hint {
+            font-size: 12px;
+            color: var(--muted);
+            margin-top: 8px
+        }
+
+        .footer {
+            margin-top: 10px;
+            color: var(--muted);
+            font-size: 13px
+        }
+
+        .kbd {
+            background: rgba(255, 255, 255, 0.03);
+            padding: 6px 8px;
+            border-radius: 6px;
+            border: 1px solid rgba(255, 255, 255, 0.02);
+            font-weight: 700
+        }
+    </style>
+</head>
+
+<body>
+    <div id="root" class="app"></div>
+
+    <!-- React + ReactDOM + Babel (for single-file JSX) -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <script crossorigin src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef } = React;
+
+        function randInt(min, max) { return Math.floor(Math.random() * (max - min + 1)) + min }
+
+        function placeFood(snake, cols, rows) {
+            const occupied = new Set(snake.map(p => p.x + ',' + p.y))
+            let x, y
+            do { x = randInt(0, cols - 1); y = randInt(0, rows - 1) } while (occupied.has(x + ',' + y))
+            return { x, y }
+        }
+
+        function useKeyControls(onDirection) {
+            useEffect(() => {
+                function handler(e) {
+                    const key = e.key
+                    if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'w', 'a', 's', 'd', 'W', 'A', 'S', 'D'].includes(key)) {
+                        e.preventDefault()
+                        if (key === 'ArrowUp' || key === 'w' || key === 'W') onDirection('up')
+                        if (key === 'ArrowDown' || key === 's' || key === 'S') onDirection('down')
+                        if (key === 'ArrowLeft' || key === 'a' || key === 'A') onDirection('left')
+                        if (key === 'ArrowRight' || key === 'd' || key === 'D') onDirection('right')
+                    }
+                }
+                window.addEventListener('keydown', handler)
+                return () => window.removeEventListener('keydown', handler)
+            }, [onDirection])
+        }
+
+        // Simple swipe detection for touch devices
+        function useSwipeControls(ref, onDirection) {
+            useEffect(() => {
+                const el = ref.current
+                if (!el) return
+                let startX = 0, startY = 0
+                function touchStart(e) { const t = e.changedTouches[0]; startX = t.clientX; startY = t.clientY }
+                function touchEnd(e) { const t = e.changedTouches[0]; const dx = t.clientX - startX; const dy = t.clientY - startY; if (Math.abs(dx) < 20 && Math.abs(dy) < 20) return; if (Math.abs(dx) > Math.abs(dy)) { if (dx > 0) onDirection('right'); else onDirection('left') } else { if (dy > 0) onDirection('down'); else onDirection('up') } }
+                el.addEventListener('touchstart', touchStart, { passive: true }); el.addEventListener('touchend', touchEnd)
+                return () => { el.removeEventListener('touchstart', touchStart); el.removeEventListener('touchend', touchEnd) }
+            }, [ref, onDirection])
+        }
+
+        function App() {
+            const [cols, setCols] = useState(20)
+            const [rows, setRows] = useState(14)
+            const [speed, setSpeed] = useState(8) // steps per second
+            const [running, setRunning] = useState(false)
+            const [score, setScore] = useState(0)
+            const [high, setHigh] = useState(() => Number(localStorage.getItem('snake_high') || 0))
+            const [gameOver, setGameOver] = useState(false)
+
+            const canvasRef = useRef(null)
+            const frameRef = useRef(null)
+            const lastTickRef = useRef(0)
+            const dirRef = useRef({ x: 1, y: 0 }) // initial right
+            const snakeRef = useRef([])
+            const foodRef = useRef({ x: 0, y: 0 })
+            const cellSizeRef = useRef(20)
+
+            // init new game
+            function newGame() {
+                const startX = Math.floor(cols / 2)
+                const startY = Math.floor(rows / 2)
+                const snake = [{ x: startX, y: startY }, { x: startX - 1, y: startY }, { x: startX - 2, y: startY }]
+                snakeRef.current = snake
+                dirRef.current = { x: 1, y: 0 }
+                foodRef.current = placeFood(snake, cols, rows)
+                setScore(0)
+                setGameOver(false)
+                setRunning(true)
+                lastTickRef.current = performance.now()
+            }
+
+            // drawing
+            function draw() {
+                const canvas = canvasRef.current; if (!canvas) return
+                const ctx = canvas.getContext('2d')
+                const w = canvas.width, h = canvas.height
+                ctx.clearRect(0, 0, w, h)
+                // background
+                ctx.fillStyle = '#041425'
+                ctx.fillRect(0, 0, w, h)
+                const cell = cellSizeRef.current
+                // draw grid (subtle)
+                ctx.strokeStyle = 'rgba(255,255,255,0.02)'
+                for (let x = 0; x <= cols; x++) { ctx.beginPath(); ctx.moveTo(x * cell, 0); ctx.lineTo(x * cell, h); ctx.stroke() }
+                for (let y = 0; y <= rows; y++) { ctx.beginPath(); ctx.moveTo(0, y * cell); ctx.lineTo(w, y * cell); ctx.stroke() }
+                // draw food
+                const f = foodRef.current
+                ctx.fillStyle = '#fb7185'
+                roundRect(ctx, f.x * cell + 2, f.y * cell + 2, cell - 4, cell - 4, 6)
+                ctx.fill()
+                // draw snake
+                const snake = snakeRef.current
+                for (let i = snake.length - 1; i >= 0; i--) {
+                    const s = snake[i]
+                    if (i === 0) drawHead(ctx, s.x, s.y, cell)
+                    else drawBody(ctx, s.x, s.y, cell, i === snake.length - 1)
+                }
+            }
+
+            function drawHead(ctx, x, y, cell) {
+                ctx.fillStyle = '#34d399'
+                roundRect(ctx, x * cell + 2, y * cell + 2, cell - 4, cell - 4, 6)
+                ctx.fill()
+            }
+            function drawBody(ctx, x, y, cell, tail = false) {
+                ctx.fillStyle = tail ? '#0ea5a0' : '#059669'
+                roundRect(ctx, x * cell + 3, y * cell + 3, cell - 6, cell - 6, 5)
+                ctx.fill()
+            }
+
+            function roundRect(ctx, x, y, w, h, r) { ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath() }
+
+            // game loop using requestAnimationFrame and speed control
+            useEffect(() => {
+                function loop(now) {
+                    frameRef.current = requestAnimationFrame(loop)
+                    if (!running || gameOver) return
+                    const interval = 1000 / speed
+                    if (now - lastTickRef.current >= interval) {
+                        tick()
+                        lastTickRef.current = now - ((now - lastTickRef.current) % interval)
+                    }
+                    draw()
+                }
+                frameRef.current = requestAnimationFrame(loop)
+                return () => cancelAnimationFrame(frameRef.current)
+            }, [running, speed, cols, rows, gameOver])
+
+            // resize canvas to fit grid
+            useEffect(() => {
+                const canvas = canvasRef.current
+                if (!canvas) return
+                const maxWidth = Math.min(640, window.innerWidth - 360)
+                const cell = Math.floor(Math.max(12, Math.min(32, maxWidth / cols)))
+                cellSizeRef.current = cell
+                canvas.width = cell * cols
+                canvas.height = cell * rows
+                draw()
+            }, [cols, rows])
+
+            // tick: move snake
+            function tick() {
+                const dir = dirRef.current
+                const snake = snakeRef.current
+                const head = { ...snake[0] }
+                head.x += dir.x; head.y += dir.y
+                // wrap-around (optional) — change to death if you prefer
+                if (head.x < 0) head.x = cols - 1
+                if (head.x >= cols) head.x = 0
+                if (head.y < 0) head.y = rows - 1
+                if (head.y >= rows) head.y = 0
+
+                // collision with self -> game over
+                if (snake.some((s, idx) => idx > 0 && s.x === head.x && s.y === head.y)) {
+                    setRunning(false); setGameOver(true); // reveal final state
+                    // update high score
+                    if (score > high) { setHigh(score); localStorage.setItem('snake_high', String(score)) }
+                    return
+                }
+
+                // move
+                snakeRef.current = [head, ...snake.slice(0, snake.length - 1)]
+
+                // eat food
+                const food = foodRef.current
+                if (head.x === food.x && head.y === food.y) {
+                    // grow
+                    snakeRef.current.push({ ...snake[snake.length - 1] })
+                    const newFood = placeFood(snakeRef.current, cols, rows)
+                    foodRef.current = newFood
+                    setScore(prev => prev + 1)
+                }
+            }
+
+            // direction control, disallow reverse
+            function setDirection(dir) {
+                const cur = dirRef.current
+                const map = { up: { x: 0, y: -1 }, down: { x: 0, y: 1 }, left: { x: -1, y: 0 }, right: { x: 1, y: 0 } }
+                const next = map[dir]
+                if (!next) return
+                // prevent reversing directly
+                if (next.x === -cur.x && next.y === -cur.y) return
+                dirRef.current = next
+            }
+
+            useKeyControls(setDirection)
+            useSwipeControls(canvasRef, setDirection)
+
+            // start automatically on first click
+            function handleCanvasClick() { if (!running && !gameOver) { setRunning(true) } }
+
+            // init on mount
+            useEffect(() => { newGame() }, [])
+
+            // manual restart
+            function restart() { newGame(); setScore(0); setRunning(true); setGameOver(false) }
+
+            return (
+                <div>
+                    <div className="top">
+                        <div className="card" style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                            <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+                                <label>Cols
+                                    <input type="number" min="8" max="50" value={cols} onChange={e => setCols(Math.max(8, Math.min(50, Number(e.target.value) || 8)))} />
+                                </label>
+                                <label>Rows
+                                    <input type="number" min="6" max="40" value={rows} onChange={e => setRows(Math.max(6, Math.min(40, Number(e.target.value) || 6)))} />
+                                </label>
+                                <label>Speed
+                                    <input type="number" min="2" max="20" value={speed} onChange={e => setSpeed(Math.max(2, Math.min(20, Number(e.target.value) || 2)))} />
+                                </label>
+
+                                <button onClick={restart}>New Game</button>
+                                <button onClick={() => { setRunning(r => !r); if (gameOver) setGameOver(false) }}>{running ? 'Pause' : 'Resume'}</button>
+                            </div>
+
+                            <div style={{ marginLeft: 'auto', textAlign: 'right' }}>
+                                <div className="stat small">Score <div className="big">{score}</div></div>
+                                <div className="stat small">High <div className="big">{high}</div></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="game-area">
+                        <div className="card" style={{ padding: 12 }}>
+                            <canvas ref={canvasRef} onClick={handleCanvasClick} style={{ display: 'block' }}></canvas>
+                            <div className="hint">Controls: Arrow keys or WASD. Swipe on mobile. Click canvas to resume.</div>
+                            {gameOver && <div style={{ marginTop: 8, color: 'var(--danger)', fontWeight: 800 }}>Game Over — your snake collided with itself.</div>}
+                        </div>
+
+                        <div className="side card">
+                            <div className="stat"><strong>How to play</strong></div>
+                            <div className="stat small">Move the snake to eat the pink food. Each food increases length and score. Don't hit the snake's own body. The game wraps at edges (it appears on the opposite side).</div>
+
+                            <div style={{ marginTop: 12 }}>
+                                <div className="stat small"><strong>Tips</strong></div>
+                                <ul style={{ color: 'var(--muted)', paddingLeft: 18 }}>
+                                    <li>Control with arrows or WASD.</li>
+                                    <li>Adjust grid and speed for challenge.</li>
+                                    <li>Click "New Game" to restart anytime.</li>
+                                </ul>
+                            </div>
+
+                            <div style={{ marginTop: 12 }}>
+                                <div className="stat small"><strong>Mobile</strong></div>
+                                <div className="stat small">Swipe on the game area to change direction. Tap to resume.</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="footer card">This is a single-file Snake game using React and canvas — no AI included. To use it: open the file in your browser. Want me to add sounds, a non-wrapping border (death on wall), or levels? Tell me which and I'll update it.</div>
+                </div>
+            )
+        }
+
+        ReactDOM.createRoot(document.getElementById('root')).render(<App />)
+    </script>
+</body>
+
+</html>
